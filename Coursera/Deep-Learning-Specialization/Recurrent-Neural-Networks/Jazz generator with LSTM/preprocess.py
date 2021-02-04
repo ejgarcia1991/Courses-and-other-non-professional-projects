@@ -1,262 +1,156 @@
-<!DOCTYPE HTML>
-<html>
+'''
+Author:     Ji-Sung Kim
+Project:    deepjazz
+Purpose:    Parse, cleanup and process data.
 
-<head>
-    <meta charset="utf-8">
+Code adapted from Evan Chow's jazzml, https://github.com/evancchow/jazzml with
+express permission.
+'''
 
-    <title>preprocess.py (editing)</title>
-    <link rel="shortcut icon" type="image/x-icon" href="/static/base/images/favicon.ico?v=97c6417ed01bdc0ae3ef32ae4894fd03">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <link rel="stylesheet" href="/static/components/jquery-ui/themes/smoothness/jquery-ui.min.css?v=9b2c8d3489227115310662a343fce11c" type="text/css" />
-    <link rel="stylesheet" href="/static/components/jquery-typeahead/dist/jquery.typeahead.min.css?v=7afb461de36accb1aa133a1710f5bc56" type="text/css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+from __future__ import print_function
+
+from music21 import *
+from collections import defaultdict, OrderedDict
+from itertools import groupby, zip_longest
+
+from grammar import *
+
+from grammar import parse_melody
+from music_utils import *
+
+#----------------------------HELPER FUNCTIONS----------------------------------#
+
+''' Helper function to parse a MIDI file into its measures and chords '''
+def __parse_midi(data_fn):
+    # Parse the MIDI data for separate melody and accompaniment parts.
+    midi_data = converter.parse(data_fn)
+    # Get melody part, compress into single voice.
+    melody_stream = midi_data[5]     # For Metheny piece, Melody is Part #5.
+    melody1, melody2 = melody_stream.getElementsByClass(stream.Voice)
+    for j in melody2:
+        melody1.insert(j.offset, j)
+    melody_voice = melody1
+
+    for i in melody_voice:
+        if i.quarterLength == 0.0:
+            i.quarterLength = 0.25
+
+    # Change key signature to adhere to comp_stream (1 sharp, mode = major).
+    # Also add Electric Guitar. 
+    melody_voice.insert(0, instrument.ElectricGuitar())
+    melody_voice.insert(0, key.KeySignature(sharps=1))
+
+    # The accompaniment parts. Take only the best subset of parts from
+    # the original data. Maybe add more parts, hand-add valid instruments.
+    # Should add least add a string part (for sparse solos).
+    # Verified are good parts: 0, 1, 6, 7 '''
+    partIndices = [0, 1, 6, 7]
+    comp_stream = stream.Voice()
+    comp_stream.append([j.flat for i, j in enumerate(midi_data) 
+        if i in partIndices])
+
+    # Full stream containing both the melody and the accompaniment. 
+    # All parts are flattened. 
+    full_stream = stream.Voice()
+    for i in range(len(comp_stream)):
+        full_stream.append(comp_stream[i])
+    full_stream.append(melody_voice)
+
+    # Extract solo stream, assuming you know the positions ..ByOffset(i, j).
+    # Note that for different instruments (with stream.flat), you NEED to use
+    # stream.Part(), not stream.Voice().
+    # Accompanied solo is in range [478, 548)
+    solo_stream = stream.Voice()
+    for part in full_stream:
+        curr_part = stream.Part()
+        curr_part.append(part.getElementsByClass(instrument.Instrument))
+        curr_part.append(part.getElementsByClass(tempo.MetronomeMark))
+        curr_part.append(part.getElementsByClass(key.KeySignature))
+        curr_part.append(part.getElementsByClass(meter.TimeSignature))
+        curr_part.append(part.getElementsByOffset(476, 548, 
+                                                  includeEndBoundary=True))
+        cp = curr_part.flat
+        solo_stream.insert(cp)
+
+    # Group by measure so you can classify. 
+    # Note that measure 0 is for the time signature, metronome, etc. which have
+    # an offset of 0.0.
+    melody_stream = solo_stream[-1]
+    measures = OrderedDict()
+    offsetTuples = [(int(n.offset / 4), n) for n in melody_stream]
+    measureNum = 0 # for now, don't use real m. nums (119, 120)
+    for key_x, group in groupby(offsetTuples, lambda x: x[0]):
+        measures[measureNum] = [n[1] for n in group]
+        measureNum += 1
+
+    # Get the stream of chords.
+    # offsetTuples_chords: group chords by measure number.
+    chordStream = solo_stream[0]
+    chordStream.removeByClass(note.Rest)
+    chordStream.removeByClass(note.Note)
+    offsetTuples_chords = [(int(n.offset / 4), n) for n in chordStream]
+
+    # Generate the chord structure. Use just track 1 (piano) since it is
+    # the only instrument that has chords. 
+    # Group into 4s, just like before. 
+    chords = OrderedDict()
+    measureNum = 0
+    for key_x, group in groupby(offsetTuples_chords, lambda x: x[0]):
+        chords[measureNum] = [n[1] for n in group]
+        measureNum += 1
+
+    # Fix for the below problem.
+    #   1) Find out why len(measures) != len(chords).
+    #   ANSWER: resolves at end but melody ends 1/16 before last measure so doesn't
+    #           actually show up, while the accompaniment's beat 1 right after does.
+    #           Actually on second thought: melody/comp start on Ab, and resolve to
+    #           the same key (Ab) so could actually just cut out last measure to loop.
+    #           Decided: just cut out the last measure. 
+    del chords[len(chords) - 1]
+    assert len(chords) == len(measures)
+
+    return measures, chords
+
+''' Helper function to get the grammatical data from given musical data. '''
+def __get_abstract_grammars(measures, chords):
+    # extract grammars
+    abstract_grammars = []
+    for ix in range(1, len(measures)):
+        m = stream.Voice()
+        for i in measures[ix]:
+            m.insert(i.offset, i)
+        c = stream.Voice()
+        for j in chords[ix]:
+            c.insert(j.offset, j)
+        parsed = parse_melody(m, c)
+        abstract_grammars.append(parsed)
+
+    return abstract_grammars
+
+#----------------------------PUBLIC FUNCTIONS----------------------------------#
+
+''' Get musical data from a MIDI file '''
+def get_musical_data(data_fn):
     
-    
-<link rel="stylesheet" href="/static/components/codemirror/lib/codemirror.css?v=f25e9a9159e54b423b5a8dc4b1ab5c6e">
-<link rel="stylesheet" href="/static/components/codemirror/addon/dialog/dialog.css?v=c89dce10b44d2882a024e7befc2b63f5">
+    measures, chords = __parse_midi(data_fn)
+    abstract_grammars = __get_abstract_grammars(measures, chords)
 
-    <link rel="stylesheet" href="/static/style/style.min.css?v=29c09309dd70e7fe93378815e5f022ae" type="text/css"/>
-    
+    return chords, abstract_grammars
 
-    <link rel="stylesheet" href="/custom/custom.css" type="text/css" />
-    <script src="/static/components/es6-promise/promise.min.js?v=f004a16cb856e0ff11781d01ec5ca8fe" type="text/javascript" charset="utf-8"></script>
-    <script src="/static/components/preact/index.js?v=5b98fce8b86ce059de89f9e728e16957" type="text/javascript"></script>
-    <script src="/static/components/proptypes/index.js?v=c40890eb04df9811fcc4d47e53a29604" type="text/javascript"></script>
-    <script src="/static/components/preact-compat/index.js?v=d376eb109a00b9b2e8c0d30782eb6df7" type="text/javascript"></script>
-    <script src="/static/components/requirejs/require.js?v=6da8be361b9ee26c5e721e76c6d4afce" type="text/javascript" charset="utf-8"></script>
-    <script>
-      require.config({
-          
-          urlArgs: "v=20210204090154",
-          
-          baseUrl: '/static/',
-          paths: {
-            'auth/js/main': 'auth/js/main.min',
-            custom : '/custom',
-            nbextensions : '/nbextensions',
-            kernelspecs : '/kernelspecs',
-            underscore : 'components/underscore/underscore-min',
-            backbone : 'components/backbone/backbone-min',
-            jquery: 'components/jquery/jquery.min',
-            bootstrap: 'components/bootstrap/js/bootstrap.min',
-            bootstraptour: 'components/bootstrap-tour/build/js/bootstrap-tour.min',
-            'jquery-ui': 'components/jquery-ui/ui/minified/jquery-ui.min',
-            moment: 'components/moment/moment',
-            codemirror: 'components/codemirror',
-            termjs: 'components/xterm.js/dist/xterm',
-            typeahead: 'components/jquery-typeahead/dist/jquery.typeahead.min',
-          },
-          map: { // for backward compatibility
-              "*": {
-                  "jqueryui": "jquery-ui",
-              }
-          },
-          shim: {
-            typeahead: {
-              deps: ["jquery"],
-              exports: "typeahead"
-            },
-            underscore: {
-              exports: '_'
-            },
-            backbone: {
-              deps: ["underscore", "jquery"],
-              exports: "Backbone"
-            },
-            bootstrap: {
-              deps: ["jquery"],
-              exports: "bootstrap"
-            },
-            bootstraptour: {
-              deps: ["bootstrap"],
-              exports: "Tour"
-            },
-            "jquery-ui": {
-              deps: ["jquery"],
-              exports: "$"
-            }
-          },
-          waitSeconds: 30,
-      });
+''' Get corpus data from grammatical data '''
+def get_corpus_data(abstract_grammars):
+    corpus = [x for sublist in abstract_grammars for x in sublist.split(' ')]
+    values = set(corpus)
+    val_indices = dict((v, i) for i, v in enumerate(values))
+    indices_val = dict((i, v) for i, v in enumerate(values))
 
-      require.config({
-          map: {
-              '*':{
-                'contents': 'services/contents',
-              }
-          }
-      });
+    return corpus, values, val_indices, indices_val
 
-      // error-catching custom.js shim.
-      define("custom", function (require, exports, module) {
-          try {
-              var custom = require('custom/custom');
-              console.debug('loaded custom.js');
-              return custom;
-          } catch (e) {
-              console.error("error loading custom.js", e);
-              return {};
-          }
-      })
-    </script>
+'''
+def load_music_utils():
+    chord_data, raw_music_data = get_musical_data('data/original_metheny.mid')
+    music_data, values, values_indices, indices_values = get_corpus_data(raw_music_data)
 
-    
-    
-
-</head>
-
-<body class="edit_app "
- 
-data-base-url="/"
-data-file-path="Week%201/Jazz%20improvisation%20with%20LSTM/preprocess.py"
-
-  
- 
-
-dir="ltr">
-
-<noscript>
-    <div id='noscript'>
-      Jupyter Notebook requires JavaScript.<br>
-      Please enable it to proceed.
-  </div>
-</noscript>
-
-<div id="header">
-  <div id="header-container" class="container">
-  <div id="ipython_notebook" class="nav navbar-brand pull-left"><a href="/tree" title='dashboard'><img src='/static/base/images/logo.png?v=641991992878ee24c6f3826e81054a0f' alt='Jupyter Notebook'/></a></div>
-
-  
-  
-  
-
-    <span id="login_widget">
-      
-    </span>
-
-  
-
-  
-
-  
-
-<span id="save_widget" class="pull-left save_widget">
-    <span class="filename"></span>
-    <span class="last_modified"></span>
-</span>
-
-
-  </div>
-  <div class="header-bar"></div>
-
-  
-
-<div id="menubar-container" class="container">
-  <div id="menubar">
-    <div id="menus" class="navbar navbar-default" role="navigation">
-      <div class="container-fluid">
-          <p  class="navbar-text indicator_area">
-          <span id="current-mode" >current mode</span>
-          </p>
-        <button type="button" class="btn btn-default navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-          <i class="fa fa-bars"></i>
-          <span class="navbar-text">Menu</span>
-        </button>
-        <ul class="nav navbar-nav navbar-right">
-          <li id="notification_area"></li>
-        </ul>
-        <div class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">File</a>
-              <ul id="file-menu" class="dropdown-menu">
-                <li id="new-file"><a href="#">New</a></li>
-                <li id="save-file"><a href="#">Save</a></li>
-                <li id="rename-file"><a href="#">Rename</a></li>
-                <li id="download-file"><a href="#">Download</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Edit</a>
-              <ul id="edit-menu" class="dropdown-menu">
-                <li id="menu-find"><a href="#">Find</a></li>
-                <li id="menu-replace"><a href="#">Find &amp; Replace</a></li>
-                <li class="divider"></li>
-                <li class="dropdown-header">Key Map</li>
-                <li id="menu-keymap-default"><a href="#">Default<i class="fa"></i></a></li>
-                <li id="menu-keymap-sublime"><a href="#">Sublime Text<i class="fa"></i></a></li>
-                <li id="menu-keymap-vim"><a href="#">Vim<i class="fa"></i></a></li>
-                <li id="menu-keymap-emacs"><a href="#">emacs<i class="fa"></i></a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">View</a>
-              <ul id="view-menu" class="dropdown-menu">
-              <li id="toggle_header" title="Show/Hide the logo and notebook title (above menu bar)">
-              <a href="#">Toggle Header</a></li>
-              <li id="menu-line-numbers"><a href="#">Toggle Line Numbers</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Language</a>
-              <ul id="mode-menu" class="dropdown-menu">
-              </ul>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="lower-header-bar"></div>
-
-
-</div>
-
-<div id="site">
-
-
-<div id="texteditor-backdrop">
-<div id="texteditor-container" class="container"></div>
-</div>
-
-
-</div>
-
-
-
-
-
-
-    
-
-
-<script src="/static/edit/js/main.min.js?v=7eb6af843396244a81afb577aedbaf89" type="text/javascript" charset="utf-8"></script>
-
-
-<script type='text/javascript'>
-  function _remove_token_from_url() {
-    if (window.location.search.length <= 1) {
-      return;
-    }
-    var search_parameters = window.location.search.slice(1).split('&');
-    for (var i = 0; i < search_parameters.length; i++) {
-      if (search_parameters[i].split('=')[0] === 'token') {
-        // remote token from search parameters
-        search_parameters.splice(i, 1);
-        var new_search = '';
-        if (search_parameters.length) {
-          new_search = '?' + search_parameters.join('&');
-        }
-        var new_url = window.location.origin + 
-                      window.location.pathname + 
-                      new_search + 
-                      window.location.hash;
-        window.history.replaceState({}, "", new_url);
-        return;
-      }
-    }
-  }
-  _remove_token_from_url();
-</script>
-<script>require(['base/js/namespace'],function(Jupyter){Jupyter._target='_self';});</script>
-<style>#ipython_notebook img{display:inline;background:none;width:inherit;padding-left:0;}</style></body>
-
-</html>
+    X, Y = data_processing(music_data, values_indices, Tx = 20, step = 3)
+    return (X, Y)
+'''

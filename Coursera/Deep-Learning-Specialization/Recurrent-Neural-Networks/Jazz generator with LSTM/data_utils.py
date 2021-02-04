@@ -1,262 +1,138 @@
-<!DOCTYPE HTML>
-<html>
+from music_utils import * 
+from preprocess import * 
+from keras.utils import to_categorical
 
-<head>
-    <meta charset="utf-8">
+chords, abstract_grammars = get_musical_data('data/original_metheny.mid')
+corpus, tones, tones_indices, indices_tones = get_corpus_data(abstract_grammars)
+N_tones = len(set(corpus))
+n_a = 64
+x_initializer = np.zeros((1, 1, 78))
+a_initializer = np.zeros((1, n_a))
+c_initializer = np.zeros((1, n_a))
 
-    <title>data_utils.py (editing)</title>
-    <link rel="shortcut icon" type="image/x-icon" href="/static/base/images/favicon.ico?v=97c6417ed01bdc0ae3ef32ae4894fd03">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <link rel="stylesheet" href="/static/components/jquery-ui/themes/smoothness/jquery-ui.min.css?v=9b2c8d3489227115310662a343fce11c" type="text/css" />
-    <link rel="stylesheet" href="/static/components/jquery-typeahead/dist/jquery.typeahead.min.css?v=7afb461de36accb1aa133a1710f5bc56" type="text/css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+def load_music_utils():
+    chords, abstract_grammars = get_musical_data('data/original_metheny.mid')
+    corpus, tones, tones_indices, indices_tones = get_corpus_data(abstract_grammars)
+    N_tones = len(set(corpus))
+    X, Y, N_tones = data_processing(corpus, tones_indices, 60, 30)   
+    return (X, Y, N_tones, indices_tones)
+
+
+def generate_music(inference_model, corpus = corpus, abstract_grammars = abstract_grammars, tones = tones, tones_indices = tones_indices, indices_tones = indices_tones, T_y = 10, max_tries = 1000, diversity = 0.5):
+    """
+    Generates music using a model trained to learn musical patterns of a jazz soloist. Creates an audio stream
+    to save the music and play it.
     
+    Arguments:
+    model -- Keras model Instance, output of djmodel()
+    corpus -- musical corpus, list of 193 tones as strings (ex: 'C,0.333,<P1,d-5>')
+    abstract_grammars -- list of grammars, on element can be: 'S,0.250,<m2,P-4> C,0.250,<P4,m-2> A,0.250,<P4,m-2>'
+    tones -- set of unique tones, ex: 'A,0.250,<M2,d-4>' is one element of the set.
+    tones_indices -- a python dictionary mapping unique tone (ex: A,0.250,< m2,P-4 >) into their corresponding indices (0-77)
+    indices_tones -- a python dictionary mapping indices (0-77) into their corresponding unique tone (ex: A,0.250,< m2,P-4 >)
+    Tx -- integer, number of time-steps used at training time
+    temperature -- scalar value, defines how conservative/creative the model is when generating music
     
-<link rel="stylesheet" href="/static/components/codemirror/lib/codemirror.css?v=f25e9a9159e54b423b5a8dc4b1ab5c6e">
-<link rel="stylesheet" href="/static/components/codemirror/addon/dialog/dialog.css?v=c89dce10b44d2882a024e7befc2b63f5">
-
-    <link rel="stylesheet" href="/static/style/style.min.css?v=29c09309dd70e7fe93378815e5f022ae" type="text/css"/>
+    Returns:
+    predicted_tones -- python list containing predicted tones
+    """
     
-
-    <link rel="stylesheet" href="/custom/custom.css" type="text/css" />
-    <script src="/static/components/es6-promise/promise.min.js?v=f004a16cb856e0ff11781d01ec5ca8fe" type="text/javascript" charset="utf-8"></script>
-    <script src="/static/components/preact/index.js?v=5b98fce8b86ce059de89f9e728e16957" type="text/javascript"></script>
-    <script src="/static/components/proptypes/index.js?v=c40890eb04df9811fcc4d47e53a29604" type="text/javascript"></script>
-    <script src="/static/components/preact-compat/index.js?v=d376eb109a00b9b2e8c0d30782eb6df7" type="text/javascript"></script>
-    <script src="/static/components/requirejs/require.js?v=6da8be361b9ee26c5e721e76c6d4afce" type="text/javascript" charset="utf-8"></script>
-    <script>
-      require.config({
-          
-          urlArgs: "v=20210204090154",
-          
-          baseUrl: '/static/',
-          paths: {
-            'auth/js/main': 'auth/js/main.min',
-            custom : '/custom',
-            nbextensions : '/nbextensions',
-            kernelspecs : '/kernelspecs',
-            underscore : 'components/underscore/underscore-min',
-            backbone : 'components/backbone/backbone-min',
-            jquery: 'components/jquery/jquery.min',
-            bootstrap: 'components/bootstrap/js/bootstrap.min',
-            bootstraptour: 'components/bootstrap-tour/build/js/bootstrap-tour.min',
-            'jquery-ui': 'components/jquery-ui/ui/minified/jquery-ui.min',
-            moment: 'components/moment/moment',
-            codemirror: 'components/codemirror',
-            termjs: 'components/xterm.js/dist/xterm',
-            typeahead: 'components/jquery-typeahead/dist/jquery.typeahead.min',
-          },
-          map: { // for backward compatibility
-              "*": {
-                  "jqueryui": "jquery-ui",
-              }
-          },
-          shim: {
-            typeahead: {
-              deps: ["jquery"],
-              exports: "typeahead"
-            },
-            underscore: {
-              exports: '_'
-            },
-            backbone: {
-              deps: ["underscore", "jquery"],
-              exports: "Backbone"
-            },
-            bootstrap: {
-              deps: ["jquery"],
-              exports: "bootstrap"
-            },
-            bootstraptour: {
-              deps: ["bootstrap"],
-              exports: "Tour"
-            },
-            "jquery-ui": {
-              deps: ["jquery"],
-              exports: "$"
-            }
-          },
-          waitSeconds: 30,
-      });
-
-      require.config({
-          map: {
-              '*':{
-                'contents': 'services/contents',
-              }
-          }
-      });
-
-      // error-catching custom.js shim.
-      define("custom", function (require, exports, module) {
-          try {
-              var custom = require('custom/custom');
-              console.debug('loaded custom.js');
-              return custom;
-          } catch (e) {
-              console.error("error loading custom.js", e);
-              return {};
-          }
-      })
-    </script>
-
+    # set up audio stream
+    out_stream = stream.Stream()
     
+    # Initialize chord variables
+    curr_offset = 0.0                                     # variable used to write sounds to the Stream.
+    num_chords = int(len(chords) / 3)                     # number of different set of chords
     
+    print("Predicting new values for different set of chords.")
+    # Loop over all 18 set of chords. At each iteration generate a sequence of tones
+    # and use the current chords to convert it into actual sounds 
+    for i in range(1, num_chords):
+        
+        # Retrieve current chord from stream
+        curr_chords = stream.Voice()
+        
+        # Loop over the chords of the current set of chords
+        for j in chords[i]:
+            # Add chord to the current chords with the adequate offset, no need to understand this
+            curr_chords.insert((j.offset % 4), j)
+        
+        # Generate a sequence of tones using the model
+        _, indices = predict_and_sample(inference_model)
+        indices = list(indices.squeeze())
+        pred = [indices_tones[p] for p in indices]
+        
+        predicted_tones = 'C,0.25 '
+        for k in range(len(pred) - 1):
+            predicted_tones += pred[k] + ' ' 
+        
+        predicted_tones +=  pred[-1]
+                
+        #### POST PROCESSING OF THE PREDICTED TONES ####
+        # We will consider "A" and "X" as "C" tones. It is a common choice.
+        predicted_tones = predicted_tones.replace(' A',' C').replace(' X',' C')
 
-</head>
+        # Pruning #1: smoothing measure
+        predicted_tones = prune_grammar(predicted_tones)
+        
+        # Use predicted tones and current chords to generate sounds
+        sounds = unparse_grammar(predicted_tones, curr_chords)
 
-<body class="edit_app "
- 
-data-base-url="/"
-data-file-path="Week%201/Jazz%20improvisation%20with%20LSTM/data_utils.py"
+        # Pruning #2: removing repeated and too close together sounds
+        sounds = prune_notes(sounds)
 
-  
- 
+        # Quality assurance: clean up sounds
+        sounds = clean_up_notes(sounds)
 
-dir="ltr">
+        # Print number of tones/notes in sounds
+        print('Generated %s sounds using the predicted values for the set of chords ("%s") and after pruning' % (len([k for k in sounds if isinstance(k, note.Note)]), i))
+        
+        # Insert sounds into the output stream
+        for m in sounds:
+            out_stream.insert(curr_offset + m.offset, m)
+        for mc in curr_chords:
+            out_stream.insert(curr_offset + mc.offset, mc)
 
-<noscript>
-    <div id='noscript'>
-      Jupyter Notebook requires JavaScript.<br>
-      Please enable it to proceed.
-  </div>
-</noscript>
+        curr_offset += 4.0
+        
+    # Initialize tempo of the output stream with 130 bit per minute
+    out_stream.insert(0.0, tempo.MetronomeMark(number=130))
 
-<div id="header">
-  <div id="header-container" class="container">
-  <div id="ipython_notebook" class="nav navbar-brand pull-left"><a href="/tree" title='dashboard'><img src='/static/base/images/logo.png?v=641991992878ee24c6f3826e81054a0f' alt='Jupyter Notebook'/></a></div>
-
-  
-  
-  
-
-    <span id="login_widget">
-      
-    </span>
-
-  
-
-  
-
-  
-
-<span id="save_widget" class="pull-left save_widget">
-    <span class="filename"></span>
-    <span class="last_modified"></span>
-</span>
-
-
-  </div>
-  <div class="header-bar"></div>
-
-  
-
-<div id="menubar-container" class="container">
-  <div id="menubar">
-    <div id="menus" class="navbar navbar-default" role="navigation">
-      <div class="container-fluid">
-          <p  class="navbar-text indicator_area">
-          <span id="current-mode" >current mode</span>
-          </p>
-        <button type="button" class="btn btn-default navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-          <i class="fa fa-bars"></i>
-          <span class="navbar-text">Menu</span>
-        </button>
-        <ul class="nav navbar-nav navbar-right">
-          <li id="notification_area"></li>
-        </ul>
-        <div class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">File</a>
-              <ul id="file-menu" class="dropdown-menu">
-                <li id="new-file"><a href="#">New</a></li>
-                <li id="save-file"><a href="#">Save</a></li>
-                <li id="rename-file"><a href="#">Rename</a></li>
-                <li id="download-file"><a href="#">Download</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Edit</a>
-              <ul id="edit-menu" class="dropdown-menu">
-                <li id="menu-find"><a href="#">Find</a></li>
-                <li id="menu-replace"><a href="#">Find &amp; Replace</a></li>
-                <li class="divider"></li>
-                <li class="dropdown-header">Key Map</li>
-                <li id="menu-keymap-default"><a href="#">Default<i class="fa"></i></a></li>
-                <li id="menu-keymap-sublime"><a href="#">Sublime Text<i class="fa"></i></a></li>
-                <li id="menu-keymap-vim"><a href="#">Vim<i class="fa"></i></a></li>
-                <li id="menu-keymap-emacs"><a href="#">emacs<i class="fa"></i></a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">View</a>
-              <ul id="view-menu" class="dropdown-menu">
-              <li id="toggle_header" title="Show/Hide the logo and notebook title (above menu bar)">
-              <a href="#">Toggle Header</a></li>
-              <li id="menu-line-numbers"><a href="#">Toggle Line Numbers</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Language</a>
-              <ul id="mode-menu" class="dropdown-menu">
-              </ul>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="lower-header-bar"></div>
-
-
-</div>
-
-<div id="site">
-
-
-<div id="texteditor-backdrop">
-<div id="texteditor-container" class="container"></div>
-</div>
-
-
-</div>
-
-
-
-
-
-
+    # Save audio stream to fine
+    mf = midi.translate.streamToMidiFile(out_stream)
+    mf.open("output/my_music.midi", 'wb')
+    mf.write()
+    print("Your generated music is saved in output/my_music.midi")
+    mf.close()
     
+    # Play the final stream through output (see 'play' lambda function above)
+    # play = lambda x: midi.realtime.StreamPlayer(x).play()
+    # play(out_stream)
+    
+    return out_stream
 
 
-<script src="/static/edit/js/main.min.js?v=7eb6af843396244a81afb577aedbaf89" type="text/javascript" charset="utf-8"></script>
-
-
-<script type='text/javascript'>
-  function _remove_token_from_url() {
-    if (window.location.search.length <= 1) {
-      return;
-    }
-    var search_parameters = window.location.search.slice(1).split('&');
-    for (var i = 0; i < search_parameters.length; i++) {
-      if (search_parameters[i].split('=')[0] === 'token') {
-        // remote token from search parameters
-        search_parameters.splice(i, 1);
-        var new_search = '';
-        if (search_parameters.length) {
-          new_search = '?' + search_parameters.join('&');
-        }
-        var new_url = window.location.origin + 
-                      window.location.pathname + 
-                      new_search + 
-                      window.location.hash;
-        window.history.replaceState({}, "", new_url);
-        return;
-      }
-    }
-  }
-  _remove_token_from_url();
-</script>
-<script>require(['base/js/namespace'],function(Jupyter){Jupyter._target='_self';});</script>
-<style>#ipython_notebook img{display:inline;background:none;width:inherit;padding-left:0;}</style></body>
-
-</html>
+def predict_and_sample(inference_model, x_initializer = x_initializer, a_initializer = a_initializer, 
+                       c_initializer = c_initializer):
+    """
+    Predicts the next value of values using the inference model.
+    
+    Arguments:
+    inference_model -- Keras model instance for inference time
+    x_initializer -- numpy array of shape (1, 1, 78), one-hot vector initializing the values generation
+    a_initializer -- numpy array of shape (1, n_a), initializing the hidden state of the LSTM_cell
+    c_initializer -- numpy array of shape (1, n_a), initializing the cell state of the LSTM_cel
+    Ty -- length of the sequence you'd like to generate.
+    
+    Returns:
+    results -- numpy-array of shape (Ty, 78), matrix of one-hot vectors representing the values generated
+    indices -- numpy-array of shape (Ty, 1), matrix of indices representing the values generated
+    """
+    
+    ### START CODE HERE ###
+    pred = inference_model.predict([x_initializer, a_initializer, c_initializer])
+    indices = np.argmax(pred, axis = -1)
+    results = to_categorical(indices, num_classes=78)
+    ### END CODE HERE ###
+    
+    return results, indices

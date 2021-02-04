@@ -1,262 +1,165 @@
-<!DOCTYPE HTML>
-<html>
+# Load Packages
+from __future__ import print_function
+from keras.callbacks import LambdaCallback
+from keras.models import Model, load_model, Sequential
+from keras.layers import Dense, Activation, Dropout, Input, Masking
+from keras.layers import LSTM
+from keras.utils.data_utils import get_file
+from keras.preprocessing.sequence import pad_sequences
+import numpy as np
+import random
+import sys
+import io
 
-<head>
-    <meta charset="utf-8">
-
-    <title>shakespeare_utils.py (editing)</title>
-    <link rel="shortcut icon" type="image/x-icon" href="/static/base/images/favicon.ico?v=97c6417ed01bdc0ae3ef32ae4894fd03">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <link rel="stylesheet" href="/static/components/jquery-ui/themes/smoothness/jquery-ui.min.css?v=9b2c8d3489227115310662a343fce11c" type="text/css" />
-    <link rel="stylesheet" href="/static/components/jquery-typeahead/dist/jquery.typeahead.min.css?v=7afb461de36accb1aa133a1710f5bc56" type="text/css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+def build_data(text, Tx = 40, stride = 3):
+    """
+    Create a training set by scanning a window of size Tx over the text corpus, with stride 3.
     
+    Arguments:
+    text -- string, corpus of Shakespearian poem
+    Tx -- sequence length, number of time-steps (or characters) in one training example
+    stride -- how much the window shifts itself while scanning
     
-<link rel="stylesheet" href="/static/components/codemirror/lib/codemirror.css?v=f25e9a9159e54b423b5a8dc4b1ab5c6e">
-<link rel="stylesheet" href="/static/components/codemirror/addon/dialog/dialog.css?v=c89dce10b44d2882a024e7befc2b63f5">
-
-    <link rel="stylesheet" href="/static/style/style.min.css?v=29c09309dd70e7fe93378815e5f022ae" type="text/css"/>
+    Returns:
+    X -- list of training examples
+    Y -- list of training labels
+    """
     
+    X = []
+    Y = []
 
-    <link rel="stylesheet" href="/custom/custom.css" type="text/css" />
-    <script src="/static/components/es6-promise/promise.min.js?v=f004a16cb856e0ff11781d01ec5ca8fe" type="text/javascript" charset="utf-8"></script>
-    <script src="/static/components/preact/index.js?v=5b98fce8b86ce059de89f9e728e16957" type="text/javascript"></script>
-    <script src="/static/components/proptypes/index.js?v=c40890eb04df9811fcc4d47e53a29604" type="text/javascript"></script>
-    <script src="/static/components/preact-compat/index.js?v=d376eb109a00b9b2e8c0d30782eb6df7" type="text/javascript"></script>
-    <script src="/static/components/requirejs/require.js?v=6da8be361b9ee26c5e721e76c6d4afce" type="text/javascript" charset="utf-8"></script>
-    <script>
-      require.config({
-          
-          urlArgs: "v=20210204090154",
-          
-          baseUrl: '/static/',
-          paths: {
-            'auth/js/main': 'auth/js/main.min',
-            custom : '/custom',
-            nbextensions : '/nbextensions',
-            kernelspecs : '/kernelspecs',
-            underscore : 'components/underscore/underscore-min',
-            backbone : 'components/backbone/backbone-min',
-            jquery: 'components/jquery/jquery.min',
-            bootstrap: 'components/bootstrap/js/bootstrap.min',
-            bootstraptour: 'components/bootstrap-tour/build/js/bootstrap-tour.min',
-            'jquery-ui': 'components/jquery-ui/ui/minified/jquery-ui.min',
-            moment: 'components/moment/moment',
-            codemirror: 'components/codemirror',
-            termjs: 'components/xterm.js/dist/xterm',
-            typeahead: 'components/jquery-typeahead/dist/jquery.typeahead.min',
-          },
-          map: { // for backward compatibility
-              "*": {
-                  "jqueryui": "jquery-ui",
-              }
-          },
-          shim: {
-            typeahead: {
-              deps: ["jquery"],
-              exports: "typeahead"
-            },
-            underscore: {
-              exports: '_'
-            },
-            backbone: {
-              deps: ["underscore", "jquery"],
-              exports: "Backbone"
-            },
-            bootstrap: {
-              deps: ["jquery"],
-              exports: "bootstrap"
-            },
-            bootstraptour: {
-              deps: ["bootstrap"],
-              exports: "Tour"
-            },
-            "jquery-ui": {
-              deps: ["jquery"],
-              exports: "$"
-            }
-          },
-          waitSeconds: 30,
-      });
-
-      require.config({
-          map: {
-              '*':{
-                'contents': 'services/contents',
-              }
-          }
-      });
-
-      // error-catching custom.js shim.
-      define("custom", function (require, exports, module) {
-          try {
-              var custom = require('custom/custom');
-              console.debug('loaded custom.js');
-              return custom;
-          } catch (e) {
-              console.error("error loading custom.js", e);
-              return {};
-          }
-      })
-    </script>
-
+    ### START CODE HERE ### (≈ 3 lines)
+    for i in range(0, len(text) - Tx, stride):
+        X.append(text[i: i + Tx])
+        Y.append(text[i + Tx])
+    ### END CODE HERE ###
     
+    print('number of training examples:', len(X))
     
-
-</head>
-
-<body class="edit_app "
- 
-data-base-url="/"
-data-file-path="Week%201/Dinosaur%20Island%20--%20Character-level%20language%20model/shakespeare_utils.py"
-
-  
- 
-
-dir="ltr">
-
-<noscript>
-    <div id='noscript'>
-      Jupyter Notebook requires JavaScript.<br>
-      Please enable it to proceed.
-  </div>
-</noscript>
-
-<div id="header">
-  <div id="header-container" class="container">
-  <div id="ipython_notebook" class="nav navbar-brand pull-left"><a href="/tree" title='dashboard'><img src='/static/base/images/logo.png?v=641991992878ee24c6f3826e81054a0f' alt='Jupyter Notebook'/></a></div>
-
-  
-  
-  
-
-    <span id="login_widget">
-      
-    </span>
-
-  
-
-  
-
-  
-
-<span id="save_widget" class="pull-left save_widget">
-    <span class="filename"></span>
-    <span class="last_modified"></span>
-</span>
+    return X, Y
 
 
-  </div>
-  <div class="header-bar"></div>
-
-  
-
-<div id="menubar-container" class="container">
-  <div id="menubar">
-    <div id="menus" class="navbar navbar-default" role="navigation">
-      <div class="container-fluid">
-          <p  class="navbar-text indicator_area">
-          <span id="current-mode" >current mode</span>
-          </p>
-        <button type="button" class="btn btn-default navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-          <i class="fa fa-bars"></i>
-          <span class="navbar-text">Menu</span>
-        </button>
-        <ul class="nav navbar-nav navbar-right">
-          <li id="notification_area"></li>
-        </ul>
-        <div class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">File</a>
-              <ul id="file-menu" class="dropdown-menu">
-                <li id="new-file"><a href="#">New</a></li>
-                <li id="save-file"><a href="#">Save</a></li>
-                <li id="rename-file"><a href="#">Rename</a></li>
-                <li id="download-file"><a href="#">Download</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Edit</a>
-              <ul id="edit-menu" class="dropdown-menu">
-                <li id="menu-find"><a href="#">Find</a></li>
-                <li id="menu-replace"><a href="#">Find &amp; Replace</a></li>
-                <li class="divider"></li>
-                <li class="dropdown-header">Key Map</li>
-                <li id="menu-keymap-default"><a href="#">Default<i class="fa"></i></a></li>
-                <li id="menu-keymap-sublime"><a href="#">Sublime Text<i class="fa"></i></a></li>
-                <li id="menu-keymap-vim"><a href="#">Vim<i class="fa"></i></a></li>
-                <li id="menu-keymap-emacs"><a href="#">emacs<i class="fa"></i></a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">View</a>
-              <ul id="view-menu" class="dropdown-menu">
-              <li id="toggle_header" title="Show/Hide the logo and notebook title (above menu bar)">
-              <a href="#">Toggle Header</a></li>
-              <li id="menu-line-numbers"><a href="#">Toggle Line Numbers</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Language</a>
-              <ul id="mode-menu" class="dropdown-menu">
-              </ul>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="lower-header-bar"></div>
-
-
-</div>
-
-<div id="site">
-
-
-<div id="texteditor-backdrop">
-<div id="texteditor-container" class="container"></div>
-</div>
-
-
-</div>
-
-
-
-
-
-
+def vectorization(X, Y, n_x, char_indices, Tx = 40):
+    """
+    Convert X and Y (lists) into arrays to be given to a recurrent neural network.
     
+    Arguments:
+    X -- 
+    Y -- 
+    Tx -- integer, sequence length
+    
+    Returns:
+    x -- array of shape (m, Tx, len(chars))
+    y -- array of shape (m, len(chars))
+    """
+    
+    m = len(X)
+    x = np.zeros((m, Tx, n_x), dtype=np.bool)
+    y = np.zeros((m, n_x), dtype=np.bool)
+    for i, sentence in enumerate(X):
+        for t, char in enumerate(sentence):
+            x[i, t, char_indices[char]] = 1
+        y[i, char_indices[Y[i]]] = 1
+        
+    return x, y 
 
 
-<script src="/static/edit/js/main.min.js?v=7eb6af843396244a81afb577aedbaf89" type="text/javascript" charset="utf-8"></script>
+def sample(preds, temperature=1.0):
+    # helper function to sample an index from a probability array
+    preds = np.asarray(preds).astype('float64')
+    preds = np.log(preds) / temperature
+    exp_preds = np.exp(preds)
+    preds = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, preds, 1)
+    out = np.random.choice(range(len(chars)), p = probas.ravel())
+    return out
+    #return np.argmax(probas)
+    
+def on_epoch_end(epoch, logs):
+    # Function invoked at end of each epoch. Prints generated text.
+    None
+    #start_index = random.randint(0, len(text) - Tx - 1)
+    
+    #generated = ''
+    #sentence = text[start_index: start_index + Tx]
+    #sentence = '0'*Tx
+    #usr_input = input("Write the beginning of your poem, the Shakespearian machine will complete it.")
+    # zero pad the sentence to Tx characters.
+    #sentence = ('{0:0>' + str(Tx) + '}').format(usr_input).lower()
+    #generated += sentence
+#
+    #sys.stdout.write(usr_input)
+
+    #for i in range(400):
+"""
+        #x_pred = np.zeros((1, Tx, len(chars)))
+
+        for t, char in enumerate(sentence):
+            if char != '0':
+                x_pred[0, t, char_indices[char]] = 1.
+
+        preds = model.predict(x_pred, verbose=0)[0]
+        next_index = sample(preds, temperature = 1.0)
+        next_char = indices_char[next_index]
+
+        generated += next_char
+        sentence = sentence[1:] + next_char
+
+        sys.stdout.write(next_char)
+        sys.stdout.flush()
+        
+        if next_char == '\n':
+            continue
+        
+    # Stop at the end of a line (4 lines)
+    print()
+ """   
+print("Loading text data...")
+text = io.open('shakespeare.txt', encoding='utf-8').read().lower()
+#print('corpus length:', len(text))
+
+Tx = 40
+chars = sorted(list(set(text)))
+char_indices = dict((c, i) for i, c in enumerate(chars))
+indices_char = dict((i, c) for i, c in enumerate(chars))
+#print('number of unique characters in the corpus:', len(chars))
+
+print("Creating training set...")
+X, Y = build_data(text, Tx, stride = 3)
+print("Vectorizing training set...")
+x, y = vectorization(X, Y, n_x = len(chars), char_indices = char_indices) 
+print("Loading model...")
+model = load_model('models/model_shakespeare_kiank_350_epoch.h5')
 
 
-<script type='text/javascript'>
-  function _remove_token_from_url() {
-    if (window.location.search.length <= 1) {
-      return;
-    }
-    var search_parameters = window.location.search.slice(1).split('&');
-    for (var i = 0; i < search_parameters.length; i++) {
-      if (search_parameters[i].split('=')[0] === 'token') {
-        // remote token from search parameters
-        search_parameters.splice(i, 1);
-        var new_search = '';
-        if (search_parameters.length) {
-          new_search = '?' + search_parameters.join('&');
-        }
-        var new_url = window.location.origin + 
-                      window.location.pathname + 
-                      new_search + 
-                      window.location.hash;
-        window.history.replaceState({}, "", new_url);
-        return;
-      }
-    }
-  }
-  _remove_token_from_url();
-</script>
-<script>require(['base/js/namespace'],function(Jupyter){Jupyter._target='_self';});</script>
-<style>#ipython_notebook img{display:inline;background:none;width:inherit;padding-left:0;}</style></body>
+def generate_output():
+    generated = ''
+    #sentence = text[start_index: start_index + Tx]
+    #sentence = '0'*Tx
+    usr_input = input("Write the beginning of your poem, the Shakespeare machine will complete it. Your input is: ")
+    # zero pad the sentence to Tx characters.
+    sentence = ('{0:0>' + str(Tx) + '}').format(usr_input).lower()
+    generated += usr_input 
 
-</html>
+    sys.stdout.write("\n\nHere is your poem: \n\n") 
+    sys.stdout.write(usr_input)
+    for i in range(400):
+
+        x_pred = np.zeros((1, Tx, len(chars)))
+
+        for t, char in enumerate(sentence):
+            if char != '0':
+                x_pred[0, t, char_indices[char]] = 1.
+
+        preds = model.predict(x_pred, verbose=0)[0]
+        next_index = sample(preds, temperature = 1.0)
+        next_char = indices_char[next_index]
+
+        generated += next_char
+        sentence = sentence[1:] + next_char
+
+        sys.stdout.write(next_char)
+        sys.stdout.flush()
+
+        if next_char == '\n':
+            continue

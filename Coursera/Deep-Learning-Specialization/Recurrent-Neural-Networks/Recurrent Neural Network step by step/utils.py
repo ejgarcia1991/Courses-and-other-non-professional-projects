@@ -1,262 +1,120 @@
-<!DOCTYPE HTML>
-<html>
+import numpy as np
 
-<head>
-    <meta charset="utf-8">
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=0)
 
-    <title>utils.py (editing)</title>
-    <link rel="shortcut icon" type="image/x-icon" href="/static/base/images/favicon.ico?v=97c6417ed01bdc0ae3ef32ae4894fd03">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <link rel="stylesheet" href="/static/components/jquery-ui/themes/smoothness/jquery-ui.min.css?v=9b2c8d3489227115310662a343fce11c" type="text/css" />
-    <link rel="stylesheet" href="/static/components/jquery-typeahead/dist/jquery.typeahead.min.css?v=7afb461de36accb1aa133a1710f5bc56" type="text/css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+def smooth(loss, cur_loss):
+    return loss * 0.999 + cur_loss * 0.001
+
+def print_sample(sample_ix, ix_to_char):
+    txt = ''.join(ix_to_char[ix] for ix in sample_ix)
+    print ('----\n %s \n----' % (txt, ))
     
+def get_initial_loss(vocab_size, seq_length):
+    return -np.log(1.0/vocab_size)*seq_length
+
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=0)
+
+def initialize_parameters(n_a, n_x, n_y):
+    """
+    Initialize parameters with small random values
     
-<link rel="stylesheet" href="/static/components/codemirror/lib/codemirror.css?v=f25e9a9159e54b423b5a8dc4b1ab5c6e">
-<link rel="stylesheet" href="/static/components/codemirror/addon/dialog/dialog.css?v=c89dce10b44d2882a024e7befc2b63f5">
-
-    <link rel="stylesheet" href="/static/style/style.min.css?v=29c09309dd70e7fe93378815e5f022ae" type="text/css"/>
+    Returns:
+    parameters -- python dictionary containing:
+                        Wax -- Weight matrix multiplying the input, numpy array of shape (n_a, n_x)
+                        Waa -- Weight matrix multiplying the hidden state, numpy array of shape (n_a, n_a)
+                        Wya -- Weight matrix relating the hidden-state to the output, numpy array of shape (n_y, n_a)
+                        b --  Bias, numpy array of shape (n_a, 1)
+                        by -- Bias relating the hidden-state to the output, numpy array of shape (n_y, 1)
+    """
+    np.random.seed(1)
+    Wax = np.random.randn(n_a, n_x)*0.01 # input to hidden
+    Waa = np.random.randn(n_a, n_a)*0.01 # hidden to hidden
+    Wya = np.random.randn(n_y, n_a)*0.01 # hidden to output
+    b = np.zeros((n_a, 1)) # hidden bias
+    by = np.zeros((n_y, 1)) # output bias
     
-
-    <link rel="stylesheet" href="/custom/custom.css" type="text/css" />
-    <script src="/static/components/es6-promise/promise.min.js?v=f004a16cb856e0ff11781d01ec5ca8fe" type="text/javascript" charset="utf-8"></script>
-    <script src="/static/components/preact/index.js?v=5b98fce8b86ce059de89f9e728e16957" type="text/javascript"></script>
-    <script src="/static/components/proptypes/index.js?v=c40890eb04df9811fcc4d47e53a29604" type="text/javascript"></script>
-    <script src="/static/components/preact-compat/index.js?v=d376eb109a00b9b2e8c0d30782eb6df7" type="text/javascript"></script>
-    <script src="/static/components/requirejs/require.js?v=6da8be361b9ee26c5e721e76c6d4afce" type="text/javascript" charset="utf-8"></script>
-    <script>
-      require.config({
-          
-          urlArgs: "v=20210204090154",
-          
-          baseUrl: '/static/',
-          paths: {
-            'auth/js/main': 'auth/js/main.min',
-            custom : '/custom',
-            nbextensions : '/nbextensions',
-            kernelspecs : '/kernelspecs',
-            underscore : 'components/underscore/underscore-min',
-            backbone : 'components/backbone/backbone-min',
-            jquery: 'components/jquery/jquery.min',
-            bootstrap: 'components/bootstrap/js/bootstrap.min',
-            bootstraptour: 'components/bootstrap-tour/build/js/bootstrap-tour.min',
-            'jquery-ui': 'components/jquery-ui/ui/minified/jquery-ui.min',
-            moment: 'components/moment/moment',
-            codemirror: 'components/codemirror',
-            termjs: 'components/xterm.js/dist/xterm',
-            typeahead: 'components/jquery-typeahead/dist/jquery.typeahead.min',
-          },
-          map: { // for backward compatibility
-              "*": {
-                  "jqueryui": "jquery-ui",
-              }
-          },
-          shim: {
-            typeahead: {
-              deps: ["jquery"],
-              exports: "typeahead"
-            },
-            underscore: {
-              exports: '_'
-            },
-            backbone: {
-              deps: ["underscore", "jquery"],
-              exports: "Backbone"
-            },
-            bootstrap: {
-              deps: ["jquery"],
-              exports: "bootstrap"
-            },
-            bootstraptour: {
-              deps: ["bootstrap"],
-              exports: "Tour"
-            },
-            "jquery-ui": {
-              deps: ["jquery"],
-              exports: "$"
-            }
-          },
-          waitSeconds: 30,
-      });
-
-      require.config({
-          map: {
-              '*':{
-                'contents': 'services/contents',
-              }
-          }
-      });
-
-      // error-catching custom.js shim.
-      define("custom", function (require, exports, module) {
-          try {
-              var custom = require('custom/custom');
-              console.debug('loaded custom.js');
-              return custom;
-          } catch (e) {
-              console.error("error loading custom.js", e);
-              return {};
-          }
-      })
-    </script>
-
+    parameters = {"Wax": Wax, "Waa": Waa, "Wya": Wya, "b": b,"by": by}
     
+    return parameters
+
+def rnn_step_forward(parameters, a_prev, x):
     
-
-</head>
-
-<body class="edit_app "
- 
-data-base-url="/"
-data-file-path="Week%201/Building%20a%20Recurrent%20Neural%20Network%20-%20Step%20by%20Step/utils.py"
-
-  
- 
-
-dir="ltr">
-
-<noscript>
-    <div id='noscript'>
-      Jupyter Notebook requires JavaScript.<br>
-      Please enable it to proceed.
-  </div>
-</noscript>
-
-<div id="header">
-  <div id="header-container" class="container">
-  <div id="ipython_notebook" class="nav navbar-brand pull-left"><a href="/tree" title='dashboard'><img src='/static/base/images/logo.png?v=641991992878ee24c6f3826e81054a0f' alt='Jupyter Notebook'/></a></div>
-
-  
-  
-  
-
-    <span id="login_widget">
-      
-    </span>
-
-  
-
-  
-
-  
-
-<span id="save_widget" class="pull-left save_widget">
-    <span class="filename"></span>
-    <span class="last_modified"></span>
-</span>
-
-
-  </div>
-  <div class="header-bar"></div>
-
-  
-
-<div id="menubar-container" class="container">
-  <div id="menubar">
-    <div id="menus" class="navbar navbar-default" role="navigation">
-      <div class="container-fluid">
-          <p  class="navbar-text indicator_area">
-          <span id="current-mode" >current mode</span>
-          </p>
-        <button type="button" class="btn btn-default navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-          <i class="fa fa-bars"></i>
-          <span class="navbar-text">Menu</span>
-        </button>
-        <ul class="nav navbar-nav navbar-right">
-          <li id="notification_area"></li>
-        </ul>
-        <div class="navbar-collapse collapse">
-          <ul class="nav navbar-nav">
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">File</a>
-              <ul id="file-menu" class="dropdown-menu">
-                <li id="new-file"><a href="#">New</a></li>
-                <li id="save-file"><a href="#">Save</a></li>
-                <li id="rename-file"><a href="#">Rename</a></li>
-                <li id="download-file"><a href="#">Download</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Edit</a>
-              <ul id="edit-menu" class="dropdown-menu">
-                <li id="menu-find"><a href="#">Find</a></li>
-                <li id="menu-replace"><a href="#">Find &amp; Replace</a></li>
-                <li class="divider"></li>
-                <li class="dropdown-header">Key Map</li>
-                <li id="menu-keymap-default"><a href="#">Default<i class="fa"></i></a></li>
-                <li id="menu-keymap-sublime"><a href="#">Sublime Text<i class="fa"></i></a></li>
-                <li id="menu-keymap-vim"><a href="#">Vim<i class="fa"></i></a></li>
-                <li id="menu-keymap-emacs"><a href="#">emacs<i class="fa"></i></a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">View</a>
-              <ul id="view-menu" class="dropdown-menu">
-              <li id="toggle_header" title="Show/Hide the logo and notebook title (above menu bar)">
-              <a href="#">Toggle Header</a></li>
-              <li id="menu-line-numbers"><a href="#">Toggle Line Numbers</a></li>
-              </ul>
-            </li>
-            <li class="dropdown"><a href="#" class="dropdown-toggle" data-toggle="dropdown">Language</a>
-              <ul id="mode-menu" class="dropdown-menu">
-              </ul>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="lower-header-bar"></div>
-
-
-</div>
-
-<div id="site">
-
-
-<div id="texteditor-backdrop">
-<div id="texteditor-container" class="container"></div>
-</div>
-
-
-</div>
-
-
-
-
-
-
+    Waa, Wax, Wya, by, b = parameters['Waa'], parameters['Wax'], parameters['Wya'], parameters['by'], parameters['b']
+    a_next = np.tanh(np.dot(Wax, x) + np.dot(Waa, a_prev) + b) # hidden state
+    p_t = softmax(np.dot(Wya, a_next) + by) # unnormalized log probabilities for next chars # probabilities for next chars 
     
+    return a_next, p_t
 
+def rnn_step_backward(dy, gradients, parameters, x, a, a_prev):
+    
+    gradients['dWya'] += np.dot(dy, a.T)
+    gradients['dby'] += dy
+    da = np.dot(parameters['Wya'].T, dy) + gradients['da_next'] # backprop into h
+    daraw = (1 - a * a) * da # backprop through tanh nonlinearity
+    gradients['db'] += daraw
+    gradients['dWax'] += np.dot(daraw, x.T)
+    gradients['dWaa'] += np.dot(daraw, a_prev.T)
+    gradients['da_next'] = np.dot(parameters['Waa'].T, daraw)
+    return gradients
 
-<script src="/static/edit/js/main.min.js?v=7eb6af843396244a81afb577aedbaf89" type="text/javascript" charset="utf-8"></script>
+def update_parameters(parameters, gradients, lr):
 
+    parameters['Wax'] += -lr * gradients['dWax']
+    parameters['Waa'] += -lr * gradients['dWaa']
+    parameters['Wya'] += -lr * gradients['dWya']
+    parameters['b']  += -lr * gradients['db']
+    parameters['by']  += -lr * gradients['dby']
+    return parameters
 
-<script type='text/javascript'>
-  function _remove_token_from_url() {
-    if (window.location.search.length <= 1) {
-      return;
-    }
-    var search_parameters = window.location.search.slice(1).split('&');
-    for (var i = 0; i < search_parameters.length; i++) {
-      if (search_parameters[i].split('=')[0] === 'token') {
-        // remote token from search parameters
-        search_parameters.splice(i, 1);
-        var new_search = '';
-        if (search_parameters.length) {
-          new_search = '?' + search_parameters.join('&');
-        }
-        var new_url = window.location.origin + 
-                      window.location.pathname + 
-                      new_search + 
-                      window.location.hash;
-        window.history.replaceState({}, "", new_url);
-        return;
-      }
-    }
-  }
-  _remove_token_from_url();
-</script>
-<script>require(['base/js/namespace'],function(Jupyter){Jupyter._target='_self';});</script>
-<style>#ipython_notebook img{display:inline;background:none;width:inherit;padding-left:0;}</style></body>
+def rnn_forward(X, Y, a0, parameters, vocab_size = 71):
+    
+    # Initialize x, a and y_hat as empty dictionaries
+    x, a, y_hat = {}, {}, {}
+    
+    a[-1] = np.copy(a0)
+    
+    # initialize your loss to 0
+    loss = 0
+    
+    for t in range(len(X)):
+        
+        # Set x[t] to be the one-hot vector representation of the t'th character in X.
+        x[t] = np.zeros((vocab_size,1)) 
+        x[t][X[t]] = 1
+        
+        # Run one step forward of the RNN
+        a[t], y_hat[t] = rnn_step_forward(parameters, a[t-1], x[t])
+        
+        # Update the loss by substracting the cross-entropy term of this time-step from it.
+        loss -= np.log(y_hat[t][Y[t],0])
+        
+    cache = (y_hat, a, x)
+        
+    return loss, cache
 
-</html>
+def rnn_backward(X, Y, parameters, cache):
+    # Initialize gradients as an empty dictionary
+    gradients = {}
+    
+    # Retrieve from cache and parameters
+    (y_hat, a, x) = cache
+    Waa, Wax, Wya, by, b = parameters['Waa'], parameters['Wax'], parameters['Wya'], parameters['by'], parameters['b']
+    
+    # each one should be initialized to zeros of the same dimension as its corresponding parameter
+    gradients['dWax'], gradients['dWaa'], gradients['dWya'] = np.zeros_like(Wax), np.zeros_like(Waa), np.zeros_like(Wya)
+    gradients['db'], gradients['dby'] = np.zeros_like(b), np.zeros_like(by)
+    gradients['da_next'] = np.zeros_like(a[0])
+    
+    ### START CODE HERE ###
+    # Backpropagate through time
+    for t in reversed(range(len(X))):
+        dy = np.copy(y_hat[t])
+        dy[Y[t]] -= 1
+        gradients = rnn_step_backward(dy, gradients, parameters, x[t], a[t], a[t-1])
+    ### END CODE HERE ###
+    
+    return gradients, a
