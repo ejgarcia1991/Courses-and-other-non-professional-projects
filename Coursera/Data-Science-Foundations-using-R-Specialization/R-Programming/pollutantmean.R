@@ -1,0 +1,29 @@
+pollutantmean<-function(directory,pollutant,id=1:332){
+  res<-0
+  f=TRUE
+  for(i in id){
+    dir<-i
+  if(i<10){
+    dir<-paste("0",dir,sep="")
+  }
+  if(i<100){
+    dir<-paste("0",dir,sep="")
+  }
+  var<-read.csv(paste(directory,"\\",dir,".csv",sep=""))
+  var<-as.data.frame(var)
+  if(f){
+    data<-var
+    f=FALSE
+  }else{
+    data<-rbind(data,var)
+  }
+  
+  }
+  if(pollutant=="nitrate"){
+    r<-mean(data$nitrate,na.rm=TRUE)  
+  }
+  if(pollutant=="sulfate"){
+    r<-mean(data$sulfate,na.rm=TRUE)  
+  }
+  r
+}

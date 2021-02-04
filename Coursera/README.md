@@ -1,2 +1,2 @@
-# Courses and other non-professional projects
+# Coursera Course Projects
 Coursera courses assignments (not class labs). In some cases the original assignment structure has been slightly tweaked to avoid people copying and pasting my solution as their own but the assignment itself is the same.
